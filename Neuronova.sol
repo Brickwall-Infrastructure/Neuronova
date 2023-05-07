@@ -25,6 +25,7 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
     address[] private _allHolders;
     mapping(address => uint256) private _balances;
     uint256 public constant YEAR_IN_SECONDS = 31536000; // seconds in a year
+    uint256 constant DAY_IN_SECONDS = 86400;
     
 
     constructor(uint256 _maxTotalSupply, uint256 _annualBurnRate) ERC20Upgradeable() OwnableUpgradeable() {
@@ -48,13 +49,25 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
         if (elapsedTime == 0) {
             return; // don't mint if less than a second has passed
         }
-        uint256 ownerBalance = balanceOf(owner());
-        uint256 proportionToMint = elapsedTime * 4 / YEAR_IN_SECONDS; // proportion of owner balance to mint
-        uint256 mintAmount = ownerBalance * proportionToMint / 100; // calculate amount to mint
+        uint256 totalTokens = totalSupply();
+        uint256 dailyPercent = 109589041; // 0.0109589041% daily mint
+        uint256 dailyMintAmount = totalTokens * dailyPercent * elapsedTime / DAY_IN_SECONDS / 10**12; // calculate daily mint amount
         lastMintTimestamp = block.timestamp; // update last mint timestamp
-        require(totalSupply() + mintAmount <= maxTotalSupply, "Max total supply exceeded");
-        _mint(owner(), mintAmount); // mint the tokens to the owner
+        require(totalSupply() + dailyMintAmount <= maxTotalSupply, "Max total supply exceeded");
+        
+        // distribute the minted tokens to all token holders
+        uint256 totalBalance = balanceOf(address(this));
+        if (totalBalance > 0) {
+            for (uint256 i = 0; i < _allHolders.length; i++) {
+                address account = _allHolders[i];
+                uint256 balance = balanceOf(account);
+                uint256 amountToMint = balance * dailyMintAmount / totalBalance;
+                _mint(account, amountToMint);
+            }
+        }
     }
+
+
 
     function burn() external {
         uint256 totalSupplyBeforeBurn = totalSupply();
