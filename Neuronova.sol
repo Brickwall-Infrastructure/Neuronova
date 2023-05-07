@@ -32,12 +32,24 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
     }
 
     function burn(uint256 amount) external {
+        uint256 senderBalance = balanceOf(msg.sender);
         uint256 totalSupplyBeforeBurn = totalSupply();
-        uint256 burnAmount = totalSupplyBeforeBurn * annualBurnRate / 100;
-        require(amount <= balanceOf(msg.sender), "Insufficient balance");
-        require(amount <= burnAmount, "Burn amount exceeds annual burn rate");
+
+        // Check if a year has passed since the last burn
+        require(block.timestamp >= lastMintTimestamp + YEAR_IN_SECONDS, "A year has not passed since the last burn");
+
+        // Calculate 5% of the balance of the sender's address at the time of the last burn
+        uint256 burnAmount = senderBalance * 5 / 100;
+
+        // Lock the amount of tokens to be burned until the next burn date
+        lastMintTimestamp = block.timestamp;
+
+        // Burn the calculated amount of tokens
+        require(amount <= burnAmount, "Burn amount exceeds 5% of the sender's balance at the last burn");
+        require(totalSupplyBeforeBurn - amount >= maxTotalSupply - maxTotalSupply * annualBurnRate / 100, "Max total supply exceeded");
         _burn(msg.sender, amount);
     }
+
 
     // Override transfer and transferFrom functions to include the _beforeTokenTransfer hook
     function transfer(address recipient, uint256 amount) public override returns (bool) {
@@ -99,4 +111,3 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
     }
 
 }
-
