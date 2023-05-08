@@ -4,23 +4,25 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeMathUpgradeable.sol";
 
 
 contract NeuronovaDeployer {
     Neuronova public token;
 
     constructor(uint256 _maxTotalSupply, uint256 _annualBurnRate) {
-        token = new Neuronova(_maxTotalSupply, _annualBurnRate);
+        token = new Neuronova();
+        token.initialize(_maxTotalSupply, _annualBurnRate, "Neuronova", "NI");
     }
 }
 
+contract Neuronova is Initializable, ERC20Upgradeable, OwnableUpgradeable {
+    using SafeMathUpgradeable for uint256;
 
-contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
-    using SafeMath for uint256;
-
-    uint256 public immutable maxTotalSupply;
-    uint256 public immutable annualBurnRate;
+    uint256 public maxTotalSupply;
+    uint256 public annualBurnRate;
     uint256 public lastMintTimestamp;
     address[] private _allHolders;
     mapping(address => uint256) private _balances;
@@ -28,8 +30,10 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
     uint256 constant DAY_IN_SECONDS = 86400;
     
 
-    constructor(uint256 _maxTotalSupply, uint256 _annualBurnRate) ERC20Upgradeable() OwnableUpgradeable() {
-        maxTotalSupply = _maxTotalSupply;
+    function initialize(uint256 _maxTotalSupply, uint256 _annualBurnRate, string memory _name, string memory _symbol) public initializer {
+        __ERC20_init(_name, _symbol);
+        __Ownable_init();
+
         annualBurnRate = _annualBurnRate;
         lastMintTimestamp = block.timestamp;
 
@@ -38,10 +42,12 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
 
         // Mint 10 million tokens to the contract owner
         uint256 mintAmount = 10000000 * 10 ** decimals();
-        require(totalSupply() + mintAmount <= maxTotalSupply, "Max total supply exceeded");
+        require(mintAmount <= _maxTotalSupply, "Mint amount exceeds max total supply");
         _mint(owner(), mintAmount);
-    }
 
+        // Set the maximum total supply
+        maxTotalSupply = _maxTotalSupply;
+    }
 
 
     function mint() external {
@@ -103,24 +109,35 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
 
 
 
-    // Override transfer and transferFrom functions to include the _beforeTokenTransfer hook
     function transfer(address to, uint256 value) public override returns (bool) {
         require(to != address(0), "Transfer to the zero address");
         require(value <= _balances[msg.sender], "Insufficient balance");
-        
+
+        _beforeTokenTransfer(msg.sender, to, value);
+
         _balances[msg.sender] = _balances[msg.sender].sub(value);
         _balances[to] = _balances[to].add(value);
 
-        if (!contains(_allHolders, msg.sender)) {
-            _allHolders.push(msg.sender);
-        }
-        if (!contains(_allHolders, to)) {
+        // Add new holder to the list if it has a balance
+        if (_balances[to] > 0 && balanceOf(to) == value) {
             _allHolders.push(to);
+        }
+
+        // Remove holder from the list if it has zero balance
+        if (_balances[msg.sender] == 0 && balanceOf(msg.sender) == 0) {
+            for (uint256 i = 0; i < _allHolders.length; i++) {
+                if (_allHolders[i] == msg.sender) {
+                    _allHolders[i] = _allHolders[_allHolders.length - 1];
+                    _allHolders.pop();
+                    break;
+                }
+            }
         }
 
         emit Transfer(msg.sender, to, value);
         return true;
     }
+
 
 
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
@@ -168,14 +185,6 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
         return "1.0.0";
     }
 
-    function name() public pure override returns (string memory) {
-        return "Neuronova Infrastructure Token";
-    }
-
-    function symbol() public pure override returns (string memory) {
-        return "NIT";
-    }
-
     function contains(address[] memory arr, address addr) private pure returns (bool) {
         for (uint i = 0; i < arr.length; i++) {
             if (arr[i] == addr) {
@@ -184,6 +193,5 @@ contract Neuronova is ERC20Upgradeable, OwnableUpgradeable {
         }
         return false;
     }
-
 
 }
